@@ -1,6 +1,6 @@
 /***********************************************************************
  *
- * Copyright (C) 2016 wereturtle
+ * Copyright (C) 2016-2019 wereturtle
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -74,11 +74,6 @@ void SessionStatistics::onDocumentWordCountChanged(int newWordCount)
 
     emit wordCountChanged(sessionWordCount);
     emit pageCountChanged(sessionWordCount / 250);
-
-    if (totalSeconds < 60)
-    {
-        emit wordsPerMinuteChanged(calculateWPM());
-    }
 }
 
 void SessionStatistics::onTypingPaused()
@@ -93,16 +88,30 @@ void SessionStatistics::onTypingResumed()
 
 void SessionStatistics::onSessionTimerExpired()
 {
+    unsigned long elapsedTime = (unsigned long) (sessionTimer->interval() / 1000);
+
+    totalSeconds += elapsedTime;
+
     if (idle)
     {
-        idleSeconds++;
+        idleSeconds += elapsedTime;
     }
 
-    totalSeconds++;
+    int wpm = calculateWPM();
 
-    emit wordsPerMinuteChanged(calculateWPM());
+    emit wordsPerMinuteChanged(wpm);
     emit writingTimeChanged(totalSeconds / 60);
     emit idleTimePercentageChanged((int) (((float)idleSeconds / (float)totalSeconds) * 100.0f));
+
+    int timerTime = 1000;
+
+    if (wpm > 0)
+    {
+        timerTime = 5000;
+    }
+
+    sessionTimer->stop();
+    sessionTimer->start(timerTime);
 }
 
 int SessionStatistics::calculateWPM() const

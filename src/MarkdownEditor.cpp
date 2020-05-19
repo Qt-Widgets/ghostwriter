@@ -1,6 +1,6 @@
 /***********************************************************************
  *
- * Copyright (C) 2014-2018 wereturtle
+ * Copyright (C) 2014-2019 wereturtle
  * Copyright (C) 2009, 2010, 2011, 2012, 2013, 2014 Graeme Gott <graeme@gottcode.org>
  * Copyright (C) Dmitry Shachnev 2012
  *
@@ -38,7 +38,6 @@
 #include <QDir>
 
 #include "ColorHelper.h"
-#include "GraphicsFadeEffect.h"
 #include "MarkdownEditor.h"
 #include "MarkdownStates.h"
 #include "MarkdownTokenizer.h"
@@ -147,6 +146,19 @@ MarkdownEditor::MarkdownEditor
     );
     typingTimer->start(1000);
 
+    typingPausedScaledSignalSent = true;
+    scaledTypingHasPaused = true;
+
+    scaledTypingTimer = new QTimer(this);
+    connect
+    (
+        scaledTypingTimer,
+        SIGNAL(timeout()),
+        this,
+        SLOT(checkIfTypingPausedScaled())
+    );
+    scaledTypingTimer->start(1000);
+
     setColorScheme
     (
         QColor(Qt::black),
@@ -160,21 +172,6 @@ MarkdownEditor::MarkdownEditor
         QColor(Qt::red)
     );
 
-    fadeEffect = new GraphicsFadeEffect(this);
-    fadeEffect->setFadeHeight(this->fontMetrics().height() * GW_TEXT_FADE_FACTOR);
-
-#if QT_VERSION >= 0x050600
-    qreal dpr = devicePixelRatio();
-
-    if (dpr <= 1.0)
-    {
-        viewport()->setGraphicsEffect(fadeEffect);
-    }
-#else
-    viewport()->setGraphicsEffect(fadeEffect);
-#endif
-
-    
     textCursorVisible = true;
     
     cursorBlinkTimer = new QTimer(this);
@@ -318,6 +315,21 @@ void MarkdownEditor::paintEvent(QPaintEvent* event)
             drawBlock = false;
         }
 
+        // This fixes the RTL bug of QPlainTextEdit
+        // https://bugreports.qt.io/browse/QTBUG-7516.
+        //
+        // Credit goes to Patrizio Bekerle (qmarkdowntextedit) for discovering
+        // this workaround.
+        //
+        if (block.text().isRightToLeft())
+        {
+            QTextLayout* layout = block.layout();
+            QTextOption opt = document()->defaultTextOption();
+            opt = QTextOption(Qt::AlignRight);
+            opt.setTextDirection(Qt::RightToLeft);
+            layout->setTextOption(opt);
+        }
+
         block = block.next();
         firstVisible = false;
     }
@@ -328,12 +340,13 @@ void MarkdownEditor::paintEvent(QPaintEvent* event)
     QPlainTextEdit::paintEvent(event);
 
     // Draw the text cursor/caret.
-    if (textCursorVisible)
+    if (textCursorVisible && this->hasFocus())
     {
         // Get the cursor rect so that we have the ideal height for it,
         // and then set it to be 2 pixels wide.  (The width will be zero,
-        // because we set it to be taht in the constructor so that 
+        // because we set it to be that in the constructor so that
         // QPlainTextEdit will not draw another cursor underneath this one.)
+        //
         QRect r = cursorRect();
         r.setWidth(2);
         
@@ -453,8 +466,6 @@ void MarkdownEditor::setFont(const QString& family, double pointSize)
     QPlainTextEdit::setFont(font);
     highlighter->setFont(family, pointSize);
     setTabulationWidth(tabWidth);
-
-    fadeEffect->setFadeHeight(this->fontMetrics().height() * GW_TEXT_FADE_FACTOR);
 }
 
 void MarkdownEditor::setShowTabsAndSpacesEnabled(bool enabled)
@@ -1482,10 +1493,12 @@ void MarkdownEditor::onContentsChanged(int position, int charsAdded, int charsRe
     // onContentsChanged(int, int, int) signal, which is only emitted when the
     // document text actually changes.
     //
-    if (typingHasPaused)
+    if (typingHasPaused || scaledTypingHasPaused)
     {
         typingHasPaused = false;
+        scaledTypingHasPaused = false;
         typingPausedSignalSent = false;
+        typingPausedScaledSignalSent = false;
         emit typingResumed();
     }
 }
@@ -1623,7 +1636,36 @@ void MarkdownEditor::checkIfTypingPaused()
         emit typingPaused();
     }
 
+    typingTimer->stop();
+    typingTimer->start(1000);
+
     typingHasPaused = true;
+}
+
+void MarkdownEditor::checkIfTypingPausedScaled()
+{
+    if (scaledTypingHasPaused && !typingPausedScaledSignalSent)
+    {
+        typingPausedScaledSignalSent = true;
+        emit typingPausedScaled();
+    }
+
+    // Scale timer interval based on document size.
+    int interval = (document()->characterCount() / 30000) * 20;
+
+    if (interval > 1000)
+    {
+        interval = 1000;
+    }
+    else if (interval < 20)
+    {
+        interval = 20;
+    }
+
+    scaledTypingTimer->stop();
+    scaledTypingTimer->start(interval);
+
+    scaledTypingHasPaused = true;
 }
 
 void MarkdownEditor::spellCheckFinished(int result)

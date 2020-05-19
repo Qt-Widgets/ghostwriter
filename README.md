@@ -16,92 +16,90 @@ Installation
 Windows
 -------
 
-On Windows, you can either download the setup.exe and go through the setup wizard (recommended), or you can run the portable version (advanced users).  To install via the setup wizard, download `ghostwriter-setup.exe` to a location of your choice, double click on its icon to run, and follow the installation steps.  Note that you must have administrator rights to install.
+On Windows, you can either download the setup.exe and go through the setup wizard (recommended), or you can run the portable version (advanced users).  To install via the setup wizard, download `ghostwriter-x64_installer.exe` from [the Windows repository here](https://github.com/michelolvera/vs-ghostwriter) to the location of your choice, double click on its icon to run, and follow the installation steps.  Note that you must have administrator rights to install.
 
 The portable version is a zip file which you can unzip to any location on your computer.  Within the zip file is a simple folder containing the `ghostwriter.exe` file.  Double click on this file to run the program.  The `dictionaries` subfolder contains your Hunspell dictionaries.  The `data` subfolder contains the location of your personal dictionaries, themes, and application settings.  The portable version is an excellent alternative for when you do not have administrative rights to install the application.  You can take it anywhere on a thumb drive and run it--at school, a friend's house, etc.
 
 Linux
 -----
 
-If you are running Ubuntu or one of its derivatives (Linux Mint, Xubuntu, etc.), simply add the [wereturtle Launchpad PPA](http://launchpad.net/~wereturtle/+archive/ubuntu/ppa) to your system.  Open a terminal, and enter the following:
+If you are running Ubuntu or one of its derivatives (Linux Mint, Xubuntu, etc.), open a terminal, and enter the following commands:
 
     $ sudo add-apt-repository ppa:wereturtle/ppa
+    $ sudo apt update
+    $ sudo apt install ghostwriter
+
+There is also now a staging PPA for release candidate builds for advanced users who wish to test drive the latest features/fixes.  To install the latest release candidate, enter the following commands from a terminal:
+
+    $ sudo add-apt-repository ppa:wereturtle/staging
     $ sudo apt-get update
+    $ sudo apt install ghostwriter
 
-You can now install the ghostwriter package.  Please consult the Launchpad guide, [*Installing software from a PPA*](https://help.launchpad.net/Packaging/PPA/InstallingSoftware), for further details.
+Fedora users can install ghostwriter from (Copr)[https://copr.fedorainfracloud.org/] by opening a terminal and entering the following commands:
 
-Also, be on the lookout for *ghostwriter* making its debut in the Debian and Ubuntu repositories in the future.  In the meantime, if you are a repository maintainer of any Linux distribution, I would appreciate your help in getting *ghostwriter* packaged.
+    $ sudo dnf copr enable wereturtle/stable
+    $ sudo dnf install ghostwriter
+
+There is likewise a staging repository for (Copr)[https://copr.fedorainfracloud.org/], where the latest release candidate can be installed with the following commands:
+
+    $ sudo dnf copr enable wereturtle/staging
+    $ sudo dnf install ghostwriter
+    
+openSUSE users can visit https://software.opensuse.org/package/ghostwriter to install the latest stable version.  Note that the openSUSE version is maintained by volunteers.
 
 Finally, you may follow the build instructions below to install on Linux with the latest source code.
 
-**Note to Unity Users:** If you are running Ubuntu with the Unity desktop environment, you should be aware of a bug with how Qt 5 application menus are displayed in the global menu.  Please see [this bug in Launchpad](https://bugs.launchpad.net/appmenu-qt5/+bug/1380702).  At the moment, the shortcuts (such as Ctrl+C, Ctrl+V, etc.) in *ghostwriter's* menus are not available within Unity.  This is true of other Qt 5 applications.  A common workaround is to remove the appmenu-qt5 package.  To do so, open a terminal window, and type the following:
+MacOS
+-----
 
-    sudo apt-get remove appmenu-qt5
+You can download an application bundle for MacOS and copy it under /Applications (for all the users) or $HOME/Applications (for the current user). That application should work on osx 10.10+, but was tested only on macOS 10.13. Please remember that this build is experimental and you'll find some bugs. Please report those on the issue tracker.
 
-This will fix the issue for all your Qt 5 applications, including *ghostwriter*.  However, it also places the menus for the application into the application's window, rather than into the global menu.
+FreeBSD
+-------
 
-An alternative workaround is to compile ghostwriter for yourself using Qt 4.8.  Shortcuts should properly work in the global menu for Qt 4.8 applications.  Regardless of your preferred workaround, this appmenu-qt5 bug should be fixed in the near future.  You can use the Launchpad link above to monitor the status of this bug.
+To install ghostwriter on FreeBSD, open a terminal, and enter the following command:
 
-**GNU/Linux Help:**  For further help with troubleshooting issues for Qt5 applications, including *ghostwriter*, please see the [GNU/Linux Troubleshooting for Q5 Applications](https://github.com/wereturtle/ghostwriter/wiki/GNU---Linux-Troubleshooting-for-Qt5-Applications) topic in the community wiki.
-
-MacOS - Help Wanted!
------------------------
-
-Unfortunately, since I do not own an Apple computer, I cannot reasonably create a Mac version of this application.  However, if you happen to be a Mac user yourself and have the knowledge, you can build the source code.  Theoretically, it should work;  but you may run into some bugs since *ghostwriter* is untested on this platform.
-
-If you are willing to test *ghostwriter* on MacOS and provide bug fixes through GitHub, your help would be very much appreciated.  Should you choose to do so, you will want to use Qt 5.5 rather than 4.8, since certain QGraphicsEffects may not work on 4.8 on MacOS, whereas there is hope that they will on version 5, based on the documentation.  Also, versions greater than Qt 5.5 do not come with QtWebkit pre-built.  Spell checking with Hunspell and Voikko will need careful testing as well.  You may wish to consult the source code for [FocusWriter](http://gottcode.org/focuswriter/) to get the latest patches, since *ghostwriter* lifted and modified parts of it.
-
-Finally, I based *ghostwriter's* packaging structure on FocusWriter, including for MacOS, to give you a head start.  You will want to once again look at FocusWriter's .pro file and resource files to ensure everything is in place within *ghostwriter* for a successful MacOS build and installation.
+    $ sudo pkg install ghostwriter
 
 Build
 =====
 
-If you wish to build from the source code, you will need either Qt 4.8 or Qt 5, available from <http://www.qt.io/> if you are on Windows or MacOS, or in your Linux distribution's repository. This documentation assumes you already have the source code unzipped in a folder.
+If you wish to build from the source code, you will need Qt 5, available from <http://www.qt.io/> if you are on Windows, or in your Linux distribution's repository. If you are on MacOS you will need the latest Qt 5 from brew.
+
+This documentation assumes you already have the source code unzipped in a folder.
 
 Windows
 -------
 
-Open a DOS terminal window, and enter the following commands:
+Building on Windows requires Visual Studio.  Open a terminal window, and enter the following commands:
 
     > cd <your_ghostwriter_folder_location>
     > qmake
-
-The next command depends on whether you have chosen to use Qt with MinGW or with Microsoft's compiler.  If you are using MinGW, enter the following:
-
-    > mingw32-make
-
-If you are using Microsoft's tools, enter the following:
-
     > nmake release
 
-Unless you have built *ghostwriter* as a standalone executable statically linked to your own build of Qt's source code, you will need to copy the necessary Qt (and MinGW) .dll files to the same location as `ghostwriter.exe` so that the executable can find the required libraries.
+Unless you have built *ghostwriter* as a standalone executable statically linked to your own build of Qt's source code, you will need to copy the necessary Qt and Windows .dll files to the same location as `ghostwriter.exe` so that the executable can find the required libraries.
 
 Linux
 -----
 
-These instructions are for Debian or Ubuntu distributions.  However, they will be similar for other Linux flavors.
+Before proceeding, ensure that you have the necessary packages installed for Qt 5.
 
-Before proceeding, ensure that you have the following packages installed for Qt 5:
+For Debian or Ubuntu distributions:
 
-* qt5-default,
-* qtbase5-dev,
-* libqt5svg5-dev,
-* qtmultimedia5-dev,
-* libqt5webkit5-dev,
-* libhunspell-dev,
-* pkg-config
-* libqt5concurrent5
-* libqt5printsupport5
-* libqt5svg5
+    $ sudo apt install g++ qt5-default qtbase5-dev libqt5svg5-dev qtmultimedia5-dev qtwebengine5-dev libhunspell-dev pkg-config libqt5concurrent5 qttools5-dev-tools
 
-Note that you may also compile and run against Qt 4.8;  however, Qt 5 is optimal for for its newer features.  Qt 4.8 has similar package dependencies to what is listed above.  You will have to find their Qt 4.8 equivalents in your Linux distribution's repository.
+For Fedora:
+
+    $ sudo dnf install qt-devel qt5-qtbase-devel qt5-qtsvg-devel qt5-qtmultimedia-devel qt5-qtwebengine-devel hunspell-devel
+
+For other Linux flavors, the list will be similar; `qmake` will tell you if you are missing anything.
 
 Next, open a terminal window, and enter the following commands:
 
     $ cd <your_ghostwriter_folder_location>
     $ qmake
     $ make
-    $ make install
+    # make install
 
 The last command will install *ghostwriter* on your machine.  If you need to install the application in an alternative location to `/usr/local`, enter the following command in lieu of the second command above, passing in the desired value for `PREFIX`:
 
@@ -113,44 +111,83 @@ For example, to install under `/opt`, you would enter:
 
 **Note:**  If you see blank areas where there should be icons, then you are missing the Qt dependency for the SVG images.  On Debian and Ubuntu, this is libqt5svg5.  Other Linux distributions may vary on the exact package name.
 
-MacOS - Help Wanted!
------------------------
+MacOS
+-----
 
-Install [homebrew](http://brew.sh).  In a terminal:
+1. You need either *XCode* or *XCode command line tools* to install and run brew and to build ghostwriter and other Qt applications.
+
+- You can install XCode from Mac App Store
+- You can install XCode command line tools from your terminal typing `xcode-select --install`
+
+2. Install [homebrew](http://brew.sh).  In a terminal:
 
 ``` shell
 /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 ```
 
-Then:
+3. Install Qt 5 from brew.
 
 ``` shell
-$ brew install qt5 --with-qtwebkit # Compication takes a while, and drains the battery
-$ cp resources/mac/Info.plist resources/
-$ qmake -spec macx-g++
-$ make
+$ brew install qt5
 ```
 
-If you see:
+*Note:* if you installed XCode command line tools qt will fail building the application with an error like `Project ERROR: Could not resolve SDK Path for 'macosx' Error while parsing file <ghostwriter.pro>. Giving up.`. Please follow the [instructions to build Qt applications without installing XCode](doc/BUILD_MAC.md)
 
+4. run `brew link` 
+
+``` shell
+brew link qt5 --force
 ```
-fatal: Not a git repository (or any of the parent directories): .git
+*Note:* This command allows you to use `qmake` from the CLI. You'll need it for the final step.
+
+5. Clone this repository and build ghostwriter:
+
+``` shell
+git clone https://github.com/wereturtle/ghostwriter
+cd ghostwriter
+qmake
+make
+
 ```
 
 Make sure you're cloned the repo, not just downloaded the src tarball.
 
-If you want *ghostwriter* in your applications folder, from the repo root do:
+5. If you want *ghostwriter* in your applications folder, from the repo root do:
 
 ``` shell
 $ sudo cp -R ./build/release/ghostwriter.app /Applications
 ```
 
-To use *ghostwriter* from the command line (assuming `/usr/local/bin` is in your path and you've moved *ghostwriter* to the `/Applications` folder):
+6. To use *ghostwriter* from the command line, do:
 
 ``` shell
 $ sudo ln -s /Applications/ghostwriter.app/Contents/MacOS/ghostwriter /usr/local/bin
 ```
 
+FreeBSD
+-------
+
+Prerequisites
+
+* Git (`git` or `git-lite`)
+
+Install the dependencies
+
+    sudo pkg inst hunspell en-hunspell pkgconf qt5-svg qt5-multimedia \
+    qt5-webengine qt5-concurrent qt5-buildtools qt5-qmake qt5-linguist
+
+You will also need to install QtWebEngine
+
+Get the sources
+
+    git clone https://github.com/wereturtle/ghostwriter
+
+Build
+
+    cd ghostwriter
+    qmake
+    make
+    sudo make install
 
 Command Line Usage
 ==================
@@ -188,10 +225,15 @@ Please submit any bugs you find through [GitHub](http://github.com/wereturtle/gh
 Roadmap
 ========
 
-- *ghostwriter* added into the various Linux distribution repositories (Debian, Fedora, etc.).  **Help wanted!**
-- A fully-tested MacOS port. **Help wanted!**
-- Translation of *ghostwriter* into other languages via *Qt Linguist*.  **Help wanted!**
-- A new Windows build maintainer **Help wanted!**
+- Port from qmake to cmake in preparation for Qt 6.
+- Add session and document goals.
+- Updating only the changed HTML in live preview to improve rendering speed.
+- Add quick preview popup of equations and images.
+- Add quick preview popup of current paragraph/section.
+- Go to corresponding line in editor on `Ctrl+left click` over text in live preview.
+- Replace HUDs with popup menus or sidebar.
+- Provide a fully-tested MacOS port with installer. **Help wanted!**
+- Translate *ghostwriter* into other languages via *Qt Linguist*.  **Help wanted!**
 
 Licensing
 =========

@@ -1,6 +1,6 @@
 /***********************************************************************
  *
- * Copyright (C) 2014, 2015 wereturtle
+ * Copyright (C) 2018-2019 wereturtle
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,40 +17,37 @@
  *
  ***********************************************************************/
 
-#ifndef GRAPHICSFADEEFFECT_H
-#define GRAPHICSFADEEFFECT_H
+#include <QDesktopServices>
 
-#include <QGraphicsEffect>
+#include "SandboxedWebPage.h"
 
-/**
- * Applies a gradual fade effect at the bottom of the widget.
- */
-class GraphicsFadeEffect : public QGraphicsEffect
+SandboxedWebPage::SandboxedWebPage(QObject *parent)
+    : QWebEnginePage(parent)
 {
-    public:
-        /**
-         * Constructor.
-         */
-        GraphicsFadeEffect(QObject* parent = 0);
 
-        /**
-         * Destructor.
-         */
-        virtual ~GraphicsFadeEffect();
+}
 
-        /**
-         * Sets the height in pixels of the fade effect that will be applied
-         * to the bottom of the widget.
-         */
-        void setFadeHeight(int height);
+SandboxedWebPage::~SandboxedWebPage()
+{
+    ;
+}
 
-        /**
-         * Overridden method to draw the effect.
-         */
-        void draw(QPainter* painter);
+bool SandboxedWebPage::acceptNavigationRequest
+(
+    const QUrl& url,
+    QWebEnginePage::NavigationType type,
+    bool isMainFrame
+)
+{
+    Q_UNUSED(isMainFrame)
 
-    private:
-        int fadeHeight;
-};
-
-#endif // GRAPHICSFADEEFFECT_H
+    if (QWebEnginePage::NavigationTypeLinkClicked == type)
+    {
+        QDesktopServices::openUrl(url);
+        return false;
+    }
+    else
+    {
+        return true;
+    }
+}

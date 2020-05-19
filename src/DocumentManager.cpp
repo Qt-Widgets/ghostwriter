@@ -1,6 +1,6 @@
 /***********************************************************************
  *
- * Copyright (C) 2014-2017 wereturtle
+ * Copyright (C) 2014-2018 wereturtle
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,9 +30,6 @@
 #include <QTextStream>
 #include <QMessageBox>
 #include <QFileDialog>
-#include <QPrinter>
-#include <QPrintPreviewDialog>
-#include <QPrintDialog>
 #include <QTimer>
 #include <QApplication>
 
@@ -73,10 +70,6 @@ DocumentManager::DocumentManager
     document = (TextDocument*) editor->document();
 
     connect(document, SIGNAL(modificationChanged(bool)), this, SLOT(onDocumentModifiedChanged(bool)));
-
-    // Set up default page layout and page size for printing.
-    printer.setPaperSize(QPrinter::Letter);
-    printer.setPageMargins(0.5, 0.5, 0.5, 0.5, QPrinter::Inch);
 
     // Set up auto-save timer to save the file once every minute.
     autoSaveTimer = new QTimer(this);
@@ -377,6 +370,16 @@ bool DocumentManager::close()
         // signal, because slots accepting this signal may check the
         // new (replacement) document's status.
         //
+        // NOTE: Must set editor's text cursor to the beginning
+        // of the document before clearing the document/editor
+        // of text to prevent a crash in Qt 5.10 on opening or
+        // reloading a file if a file has already been previously
+        // opened in the editor.
+        //
+        QTextCursor cursor(document);
+        cursor.setPosition(0);
+        editor->setTextCursor(cursor);
+
         document->setPlainText("");
         document->clearUndoRedoStacks();
         editor->setReadOnly(false);
@@ -411,23 +414,6 @@ void DocumentManager::exportFile()
     connect(&exportDialog, SIGNAL(exportComplete()), this, SIGNAL(operationFinished()));
 
     exportDialog.exec();
-}
-
-void DocumentManager::printPreview()
-{
-    QPrintPreviewDialog printPreviewDialog(&printer, parentWidget);
-    connect(&printPreviewDialog, SIGNAL(paintRequested(QPrinter*)), this, SLOT(printFileToPrinter(QPrinter*)));
-    printPreviewDialog.exec();
-}
-
-void DocumentManager::print()
-{
-    QPrintDialog printDialog(&printer, parentWidget);
-
-    if (printDialog.exec() == QDialog::Accepted)
-    {
-        printFileToPrinter(&printer);
-    }
 }
 
 void DocumentManager::onDocumentModifiedChanged(bool modified)
@@ -527,30 +513,6 @@ void DocumentManager::onFileChangedExternally(const QString& path)
     }
 }
 
-void DocumentManager::printFileToPrinter(QPrinter* printer)
-{
-    QString text = editor->document()->toPlainText();
-    TextDocument doc(text);
-    MarkdownEditor e(&doc);
-
-    Theme printerTheme = ThemeFactory::getInstance()->getPrinterFriendlyTheme();
-    e.setColorScheme
-    (
-        printerTheme.getDefaultTextColor(),
-        printerTheme.getBackgroundColor(),
-        printerTheme.getMarkupColor(),
-        printerTheme.getLinkColor(),
-        printerTheme.getHeadingColor(),
-        printerTheme.getEmphasisColor(),
-        printerTheme.getBlockquoteColor(),
-        printerTheme.getCodeColor(),
-        printerTheme.getSpellingErrorColor()
-    );
-    e.setSpellCheckEnabled(false);
-    e.setFont(editor->font().family(), editor->font().pointSizeF());
-    doc.print(printer);
-}
-
 void DocumentManager::autoSaveFile()
 {
     if
@@ -618,12 +580,20 @@ bool DocumentManager::loadFile(const QString& filePath)
     }
 
     outline->clear();
+
+    // NOTE: Must set editor's text cursor to the beginning
+    // of the document before clearing the document/editor
+    // of text to prevent a crash in Qt 5.10 on opening or
+    // reloading a file if a file has already been previously
+    // opened in the editor.
+    //
+    QTextCursor cursor(document);
+    cursor.setPosition(0);
+    editor->setTextCursor(cursor);
+
     document->clearUndoRedoStacks();
     document->setUndoRedoEnabled(false);
     document->setPlainText("");
-
-    QTextCursor cursor(document);
-    cursor.setPosition(0);
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
     emit operationStarted(tr("opening %1").arg(filePath));
@@ -881,7 +851,7 @@ QString DocumentManager::saveToDisk
         backupFile(filePath);
     }
 
-    if (!outputFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
+    if (!outputFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
     {
         return outputFile.errorString();
     }
@@ -923,7 +893,7 @@ void DocumentManager::backupFile(const QString& filePath) const
 
     QFile file(filePath);
 
-    if (!file.rename(backupFilePath))
+    if (!file.copy(backupFilePath))
     {
         qCritical("Failed to backup file to %s: %s",
             backupFilePath.toLatin1().data(),

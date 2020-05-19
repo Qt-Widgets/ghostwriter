@@ -1,6 +1,6 @@
 /***********************************************************************
  *
- * Copyright (C) 2014-2018 wereturtle
+ * Copyright (C) 2014-2019 wereturtle
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -88,9 +88,19 @@ ExporterFactory::ExporterFactory()
     CommandLineExporter* exporter = NULL;
     bool pandocIsAvailable = isCommandAvailable("pandoc --version");
     bool mmdIsAvailable = isCommandAvailable("multimarkdown --version");
-    bool discountIsAvailable = isCommandAvailable("markdown -V");
+    bool discountIsAvailable = false;
     bool cmarkIsAvailable = isCommandAvailable("cmark --version");
     bool cmarkGfmIsAvailable = isCommandAvailable("cmark-gfm --version");
+
+    // MultiMarkdown installs a "markdown" script to launch the "multimarkdown"
+    // command.  Discount's executable also happens to be named "markdown".
+    // To avoid confusion, check if MultiMarkdown is actually installed, and
+    // only if it isn't installed should Discount be checked for availability.
+    //
+    if (!mmdIsAvailable)
+    {
+        discountIsAvailable = isCommandAvailable("markdown -V");
+    }
 
     SundownExporter* sundownExporter = new SundownExporter();
     fileExporters.append(sundownExporter);
@@ -125,7 +135,7 @@ ExporterFactory::ExporterFactory()
             addPandocExporter("Pandoc CommonMark", "commonmark", majorVersion, minorVersion);
         }
 
-        addPandocExporter("Pandoc GitHub-flavored Markdown", "markdown_github", majorVersion, minorVersion);
+        addPandocExporter("Pandoc GitHub-flavored Markdown", "markdown_github-hard_line_breaks", majorVersion, minorVersion);
         addPandocExporter("Pandoc PHP Markdown Extra", "markdown_phpextra", majorVersion, minorVersion);
         addPandocExporter("Pandoc MultiMarkdown", "markdown_mmd", majorVersion, minorVersion);
         addPandocExporter("Pandoc Strict", "markdown_strict", majorVersion, minorVersion);
@@ -162,13 +172,49 @@ ExporterFactory::ExporterFactory()
                 .arg(CommandLineExporter::SMART_TYPOGRAPHY_ARG)
                 .arg(CommandLineExporter::OUTPUT_FILE_PATH_VAR)
         );
-        exporter->addFileExportCommand
-        (
-            ExportFormat::ODF,
-            QString("multimarkdown %1 -t odf -o %2")
-                .arg(CommandLineExporter::SMART_TYPOGRAPHY_ARG)
-                .arg(CommandLineExporter::OUTPUT_FILE_PATH_VAR)
-        );
+
+        // Version 6 removed ODF option and replaced it with ODT and FODT.
+        if (majorVersion >= 6)
+        {
+            exporter->addFileExportCommand
+            (
+                ExportFormat::ODT,
+                QString("multimarkdown %1 -t odt -o %2")
+                    .arg(CommandLineExporter::SMART_TYPOGRAPHY_ARG)
+                    .arg(CommandLineExporter::OUTPUT_FILE_PATH_VAR)
+            );
+
+            exporter->addFileExportCommand
+            (
+                ExportFormat::ODF,
+                QString("multimarkdown %1 -t fodt -o %2")
+                    .arg(CommandLineExporter::SMART_TYPOGRAPHY_ARG)
+                    .arg(CommandLineExporter::OUTPUT_FILE_PATH_VAR)
+            );
+        }
+        else
+        {
+            exporter->addFileExportCommand
+            (
+                ExportFormat::ODF,
+                QString("multimarkdown %1 -t odf -o %2")
+                    .arg(CommandLineExporter::SMART_TYPOGRAPHY_ARG)
+                    .arg(CommandLineExporter::OUTPUT_FILE_PATH_VAR)
+            );
+        }
+
+        // Version 6 added EPUB 3
+        if (majorVersion >= 6)
+        {
+            exporter->addFileExportCommand
+            (
+                ExportFormat::EPUBV3,
+                QString("multimarkdown %1 -b -t epub -o %2")
+                    .arg(CommandLineExporter::SMART_TYPOGRAPHY_ARG)
+                    .arg(CommandLineExporter::OUTPUT_FILE_PATH_VAR)
+            );
+        }
+
         exporter->addFileExportCommand
         (
             ExportFormat::LATEX,
@@ -292,13 +338,26 @@ QList<int> ExporterFactory::extractVersionNumber(const QString& command) const
     }
 
     QString versionStr = QString::fromUtf8(process.readAllStandardOutput().data());
-    QRegularExpression versionRegex("\\d+(\\.\\d+)*");
+    QRegularExpression versionRegex1("v(\\d+(\\.\\d+)*)");
+    QRegularExpression versionRegex2("(\\d+(\\.\\d+)*)");
     QRegularExpressionMatch match;
-    int pos = versionStr.indexOf(versionRegex, 0, &match);
+
+    // Prefer searching for "v1.6.3" version format over "1.6.3" format
+    int pos = versionStr.indexOf(versionRegex1, 0, &match);
 
     if ((pos >= 0) && match.hasMatch())
     {
-        versionStr = match.captured();
+        versionStr = match.captured(1);
+    }
+    // Else try the "1.6.3" format without the "v" in front
+    else
+    {
+        pos = versionStr.indexOf(versionRegex2, 0, &match);
+
+        if ((pos >= 0) && match.hasMatch())
+        {
+            versionStr = match.captured(1);
+        }
     }
 
     QStringList numbers = versionStr.split('.', QString::SkipEmptyParts);
@@ -352,18 +411,32 @@ void ExporterFactory::addPandocExporter
 
     exporter->setHtmlRenderCommand
     (
-        QString("pandoc -f ") +
+        QString("pandoc --mathml -f ") +
             inputFormat +
             CommandLineExporter::SMART_TYPOGRAPHY_ARG +
             " -t html"
     );
 
-    QString standardExportStr =
-        QString("pandoc -f ") +
-        inputFormat +
-        CommandLineExporter::SMART_TYPOGRAPHY_ARG +
-        " -t %1 --standalone -o " +
-        CommandLineExporter::OUTPUT_FILE_PATH_VAR;
+    QString standardExportStr;
+    if (majorVersion >= 2)
+    {
+        standardExportStr =
+            QString("pandoc -f ") +
+            inputFormat +
+            CommandLineExporter::SMART_TYPOGRAPHY_ARG +
+            " -t %1 --standalone --mathml --quiet -o " +
+            CommandLineExporter::OUTPUT_FILE_PATH_VAR;
+    }
+    else
+    {
+        // older Pandoc releases don't know the option '--quiet'
+        standardExportStr =
+            QString("pandoc -f ") +
+            inputFormat +
+            CommandLineExporter::SMART_TYPOGRAPHY_ARG +
+            " -t %1 --standalone --mathml -o " +
+            CommandLineExporter::OUTPUT_FILE_PATH_VAR;
+    }
 
     exporter->addFileExportCommand
     (
@@ -407,12 +480,17 @@ void ExporterFactory::addPandocExporter
         standardExportStr.arg("context") +
             " --variable pagenumbering:location=footer --variable layout:header=0mm --variable layout:top=1in --variable layout:bottom=1in --variable layout:leftmargin=1in --variable layout:rightmargin=1in -Vlinkcolor=blue"
     );
+
+    // Note: Do not use --mathjax option with WKHTMLTOPDF export, as this will
+    // cause pandoc to hang.
+    //
     exporter->addFileExportCommand
     (
         ExportFormat::PDF_WKHTML,
         standardExportStr.arg("html5") +
-            " -Vmargin-left=1in -Vmargin-right=1in -Vmargin-top=1in -Vmargin-bottom=1in --mathjax"
+            " -Vmargin-left=1in -Vmargin-right=1in -Vmargin-top=1in -Vmargin-bottom=1in"
     );
+
     exporter->addFileExportCommand
     (
         ExportFormat::EPUBV2,

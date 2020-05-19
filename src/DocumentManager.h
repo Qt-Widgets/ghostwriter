@@ -1,6 +1,6 @@
 /***********************************************************************
  *
- * Copyright (C) 2014-2017 wereturtle
+ * Copyright (C) 2014-2018 wereturtle
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,7 +23,6 @@
 #include <QObject>
 #include <QWidget>
 #include <QFutureWatcher>
-#include <QPrinter>
 
 #include "MarkdownEditor.h"
 #include "Outline.h"
@@ -206,23 +205,11 @@ class DocumentManager : public QObject
          */
         void exportFile();
 
-        /**
-         * Opens a print preview dialog for the current document.
-         */
-        void printPreview();
-
-        /**
-         * Prints the current document, first prompting the user for printing
-         * options and a printer device.
-         */
-        void print();
-
     private slots:
 
         void onDocumentModifiedChanged(bool modified);
         void onSaveCompleted();
         void onFileChangedExternally(const QString& path);
-        void printFileToPrinter(QPrinter* printer);
         void autoSaveFile();
 
     private:
@@ -238,14 +225,6 @@ class DocumentManager : public QObject
         QFileSystemWatcher* fileWatcher;
         bool fileHistoryEnabled;
         bool createBackupOnSave;
-
-        /*
-         * Used to set default page layout options for printing.  Also,
-         * if the user closes the print preview dialog, the page layout and
-         * page size settings are remembered in the event that the user reopens
-         * the dialog during the same application session.
-         */
-        QPrinter printer;
 
         /*
          * This flag is used to prevent notifying the user that the document

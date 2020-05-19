@@ -1,6 +1,6 @@
 /***********************************************************************
  *
- * Copyright (C) 2017 wereturtle
+ * Copyright (C) 2017-2018 wereturtle
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,6 +34,7 @@ PreviewOptionsDialog::PreviewOptionsDialog(QWidget *parent)
 
     exporterFactory = ExporterFactory::getInstance();
     defaultStyleSheets.append(":/resources/github.css");
+    defaultStyleSheets.append(":/resources/github-dark.css");
 
     QWidget* mainContents = new QWidget(this);
     QVBoxLayout* layout = new QVBoxLayout();
@@ -43,7 +44,7 @@ PreviewOptionsDialog::PreviewOptionsDialog(QWidget *parent)
     QFormLayout* optionsLayout = new QFormLayout();
     mainContents->setLayout(optionsLayout);
 
-    previewerComboBox = new QComboBox();
+    previewerComboBox = new QComboBox(this);
 
     QList<Exporter*> exporters = exporterFactory->getHtmlExporters();
     Exporter* currentExporter = AppSettings::getInstance()->getCurrentHtmlExporter();
@@ -70,6 +71,7 @@ PreviewOptionsDialog::PreviewOptionsDialog(QWidget *parent)
     styleSheetComboBox = new QComboBox(this);
     buildStyleSheetComboBox();
     optionsLayout->addRow(tr("Style Sheet"), styleSheetComboBox);
+    connect(styleSheetComboBox, SIGNAL(currentIndexChanged(int)), this, SLOT(onStyleSheetChanged(int)));
 
     QDialogButtonBox* buttonBox = new QDialogButtonBox(Qt::Horizontal, this);
     buttonBox->addButton(QDialogButtonBox::Close);
@@ -107,10 +109,12 @@ void PreviewOptionsDialog::onCustomCssFilesChanged(const QStringList& fileList)
 
 void PreviewOptionsDialog::buildStyleSheetComboBox()
 {
-    styleSheetComboBox->disconnect();
+    styleSheetComboBox->blockSignals(true);
     styleSheetComboBox->clear();
     styleSheetComboBox->addItem(tr("Github (Default)"));
     styleSheetComboBox->setItemData(0, QVariant(defaultStyleSheets.at(0)));
+    styleSheetComboBox->addItem(tr("Github Dark"));
+    styleSheetComboBox->setItemData(1, QVariant(defaultStyleSheets.at(1)));
 
     int customCssIndexStart = defaultStyleSheets.size();
 
@@ -148,5 +152,5 @@ void PreviewOptionsDialog::buildStyleSheetComboBox()
         AppSettings::getInstance()->setCurrentCssFile(defaultStyleSheets.first());
     }
 
-    connect(styleSheetComboBox, SIGNAL(currentIndexChanged(int)), this, SLOT(onStyleSheetChanged(int)));
+    styleSheetComboBox->blockSignals(false);
 }

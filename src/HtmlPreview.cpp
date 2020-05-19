@@ -1,6 +1,6 @@
 /***********************************************************************
  *
- * Copyright (C) 2014-2018 wereturtle
+ * Copyright (C) 2014-2020 wereturtle
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,18 +21,17 @@
 #include <QFile>
 #include <QTextStream>
 #include <QString>
-#include <QPrintPreviewDialog>
 #include <QApplication>
 #include <QStack>
 #include <QDir>
 #include <QDesktopServices>
 #include <QtConcurrentRun>
 #include <QFuture>
-#include <QPrinter>
-#include <QDesktopWidget>
+#include <QWebChannel>
 
 #include "HtmlPreview.h"
 #include "Exporter.h"
+#include "SandboxedWebPage.h"
 
 HtmlPreview::HtmlPreview
 (
@@ -40,43 +39,82 @@ HtmlPreview::HtmlPreview
     Exporter* exporter,
     QWidget* parent
 )
-    : QMainWindow(parent), document(document), exporter(exporter)
+    : QWebEngineView(parent), document(document), updateInProgress(false),
+        updateAgain(false), exporter(exporter)
 {
-    htmlBrowser = new QWebView(this);
-    htmlBrowser->settings()->setDefaultTextEncoding("utf-8");
+    vanillaHtml = "";
+    baseUrl = "";
+    livePreviewHtml.setText("");
+    styleSheetUrl.setText(":/resources/github.css");
 
-    setWindowTitle(tr("HTML Preview"));
+    this->setPage(new SandboxedWebPage(this));
+    this->settings()->setDefaultTextEncoding("utf-8");
+    this->settings()->setAttribute(QWebEngineSettings::LocalContentCanAccessFileUrls, true);
     this->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-    html = "";
-    htmlBrowser->setHtml("");
-    htmlBrowser->page()->setContentEditable(false);
-    htmlBrowser->page()->setLinkDelegationPolicy(QWebPage::DelegateExternalLinks);
-    htmlBrowser->page()->action(QWebPage::Reload)->setVisible(false);
-    htmlBrowser->page()->action(QWebPage::OpenLink)->setVisible(false);
-    htmlBrowser->page()->action(QWebPage::OpenLinkInNewWindow)->setVisible(false);
-    connect(htmlBrowser, SIGNAL(linkClicked(QUrl)), this, SLOT(onLinkClicked(QUrl)));
+    this->page()->action(QWebEnginePage::Reload)->setVisible(false);
+    this->page()->action(QWebEnginePage::ReloadAndBypassCache)->setVisible(false);
+    this->page()->action(QWebEnginePage::OpenLinkInThisWindow)->setVisible(false);
+    this->page()->action(QWebEnginePage::OpenLinkInNewWindow)->setVisible(false);
+    this->page()->action(QWebEnginePage::ViewSource)->setVisible(false);
+    this->page()->action(QWebEnginePage::SavePage)->setVisible(false);
+    QWebEngineProfile::defaultProfile()->setHttpCacheType(QWebEngineProfile::NoCache);
+    QWebEngineProfile::defaultProfile()->clearHttpCache();
+    QWebEngineProfile::defaultProfile()->clearAllVisitedLinks();
+    connect(this, SIGNAL(loadFinished(bool)), this, SLOT(onLoadFinished(bool)));
     headingTagExp.setPattern("^[Hh][1-6]$");
-
-    this->setCentralWidget(htmlBrowser);
 
     futureWatcher = new QFutureWatcher<QString>(this);
     this->connect(futureWatcher, SIGNAL(finished()), SLOT(onHtmlReady()));
-
     this->connect(document, SIGNAL(filePathChanged()), SLOT(updateBaseDir()));
-    this->updateBaseDir();
 
-    // Set up default page layout and page size for printing.
-    printer.setPaperSize(QPrinter::Letter);
-    printer.setPageMargins(0.5, 0.5, 0.5, 0.5, QPrinter::Inch);
-
-    // Set zoom factor for WebKit browser to account for system DPI settings,
-    // since WebKit assumes 96 DPI as a fixed resolution.
+    // Set zoom factor for Chromium browser to account for system DPI settings,
+    // since Chromium assumes 96 DPI as a fixed resolution.
     //
     QWidget* window = QApplication::desktop()->screen();
     int horizontalDpi = window->logicalDpiX();
-    // Don't want to affect image size, only text size.
-    htmlBrowser->settings()->setAttribute(QWebSettings::ZoomTextOnly, true);
-    htmlBrowser->setZoomFactor((horizontalDpi / 96.0));
+    this->setZoomFactor((horizontalDpi / 96.0));
+
+    QWebChannel *channel = new QWebChannel(this);
+    channel->registerObject(QStringLiteral("stylesheeturl"), &styleSheetUrl);
+    channel->registerObject(QStringLiteral("livepreviewcontent"), &livePreviewHtml);
+    this->page()->setWebChannel(channel);
+    this->wrapperHtml =
+        "<!doctype html>"
+        "<html lang=\"en\">"
+        "<meta charset=\"utf-8\">"
+        "<head>"
+        "    <script>"
+        "         MathJax = {"
+        "            tex: {"
+        "                inlineMath: [['$', '$']]]"
+        "             }"
+        "         };"
+        "    </script>"
+        "    <script type=\"text/javascript\" id=\"MathJax-script\" src=\"https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js\"></script>"
+        "    <link id='ghostwriter_css' rel='stylesheet' type='text/css' href='qrc:/resources/github.css' media='all' />"
+        "    <script src=\"qrc:/qtwebchannel/qwebchannel.js\"></script>"
+        "</head>"
+        "<body>"
+        "    <div id=\"livepreviewplaceholder\"></div>"
+        "    <script src=\"qrc:/resources/gw.js\"></script>"
+        "    <script>"
+        "        new QWebChannel(qt.webChannelTransport,"
+        "            function(channel) {"
+        "                var styleSheetUrl = channel.objects.stylesheeturl;"
+        "                loadStyleSheet(styleSheetUrl.text);"
+        "                styleSheetUrl.textChanged.connect(loadStyleSheet);"
+        ""
+        "                var content = channel.objects.livepreviewcontent;"
+        "                updateText(content.text);"
+        "                content.textChanged.connect(updateText);"
+        "            }"
+        "        );"
+        "    </script>"
+        "</body>"
+        "</html>";
+
+    // Set the base URL and load the preview using wrapperHtml above.
+    this->updateBaseDir();
 }
 
 HtmlPreview::~HtmlPreview()
@@ -85,8 +123,20 @@ HtmlPreview::~HtmlPreview()
     futureWatcher->waitForFinished();
 }
 
+void HtmlPreview::contextMenuEvent(QContextMenuEvent* event)
+{
+    QMenu* menu = page()->createStandardContextMenu();
+    menu->popup(event->globalPos());
+}
+
 void HtmlPreview::updatePreview()
 {
+    if (updateInProgress)
+    {
+        updateAgain = true;
+        return;
+    }
+
     if (this->isVisible())
     {
         // Some markdown processors don't handle empty text very well
@@ -95,7 +145,7 @@ void HtmlPreview::updatePreview()
         //
         if (document->isEmpty())
         {
-            this->setHtml("");
+            this->setHtmlContent("");
         }
         else if (NULL != exporter)
         {
@@ -103,6 +153,7 @@ void HtmlPreview::updatePreview()
 
             if (!text.isNull() && !text.isEmpty())
             {
+                updateInProgress = true;
                 QFuture<QString> future =
                     QtConcurrent::run
                     (
@@ -119,8 +170,38 @@ void HtmlPreview::updatePreview()
 
 void HtmlPreview::navigateToHeading(int headingSequenceNumber)
 {
-    QString anchor = QString("livepreviewhnbr%1").arg(headingSequenceNumber);
-    this->htmlBrowser->page()->mainFrame()->scrollToAnchor(anchor);
+    this->page()->runJavaScript
+    (
+        QString
+        (
+            "document.getElementById('livepreviewhnbr%1').scrollIntoView()"
+        ).arg(headingSequenceNumber)
+    );
+}
+
+void HtmlPreview::setHtmlExporter(Exporter* exporter)
+{
+    this->exporter = exporter;
+    setHtmlContent("");
+    updatePreview();
+}
+
+void HtmlPreview::setStyleSheet(const QString& filePath)
+{
+    // If not an internal resource file, use a URL path from the local file
+    if (!filePath.startsWith(":") && !filePath.startsWith("qrc:") && !filePath.startsWith("file:"))
+    {
+        styleSheetUrl.setText(QUrl::fromLocalFile(filePath).toString());
+    }
+    // Ensure "qrc" is in front of local resource file path
+    else if (filePath.startsWith(":"))
+    {
+        styleSheetUrl.setText("qrc" + filePath);
+    }
+    else
+    {
+        styleSheetUrl.setText(filePath);
+    }
 }
 
 void HtmlPreview::onHtmlReady()
@@ -133,7 +214,7 @@ void HtmlPreview::onHtmlReady()
     QString anchoredHtml = "";
 
     QTextStream newHtmlDoc((QString*) &html, QIODevice::ReadOnly);
-    QTextStream oldHtmlDoc((QString*) &(this->html), QIODevice::ReadOnly);
+    QTextStream oldHtmlDoc((QString*) &(this->vanillaHtml), QIODevice::ReadOnly);
     QTextStream anchoredHtmlDoc(&anchoredHtml, QIODevice::WriteOnly);
 
     bool differenceFound = false;
@@ -148,7 +229,7 @@ void HtmlPreview::onHtmlReady()
             // beginning of the line.
             //
             differenceFound = true;
-            anchoredHtmlDoc << "<div id=\"livepreviewmodifypoint\" />";
+            anchoredHtmlDoc << "<a id=\"livepreviewmodifypoint\"></a>";
         }
         else
         {
@@ -158,11 +239,25 @@ void HtmlPreview::onHtmlReady()
         }
     }
 
+    // If lines were removed at the end of the new document,
+    // ensure anchor point is inserted.
+    //
+    if (!differenceFound && !oldLine.isNull() && newLine.isNull())
+    {
+        differenceFound = true;
+        anchoredHtmlDoc << "<a id=\"livepreviewmodifypoint\"></a>";
+    }
+
     // Put any remaining new HTML data into the
     // anchored HTML string.
     //
     while (!newLine.isNull())
     {
+        if (!differenceFound)
+        {
+            anchoredHtmlDoc << "<a id=\"livepreviewmodifypoint\"></a>";
+        }
+
         differenceFound = true;
         anchoredHtmlDoc << newLine << "\n";
         newLine = newHtmlDoc.readLine();
@@ -170,115 +265,26 @@ void HtmlPreview::onHtmlReady()
 
     if (differenceFound)
     {
-        setHtml(anchoredHtml);
-        this->html = html;
-
-        // Traverse the DOM in the browser, and find all the H1-H6 tags.
-        // Set the id attribute of each heading tag to have a unique
-        // sequence number, so that when the navigateToHeading() slot
-        // is triggered, we can scroll to the desired heading.
-        //
-        QWebFrame* frame = htmlBrowser->page()->mainFrame();
-        QWebElement element = frame->documentElement();
-        QStack<QWebElement> elementStack;
-        int headingId = 1;
-
-        elementStack.push(element);
-
-        while (!elementStack.isEmpty())
-        {
-            element = elementStack.pop();
-
-            // If the element is a heading tag (H1-H6), set an anchor id for it.
-            if (element.tagName().contains(headingTagExp))
-            {
-                element.prependOutside(QString("<span id='livepreviewhnbr%1'></span>").arg(headingId));
-                headingId++;
-            }
-            // else if the element is something that would have a heading tag
-            // (not a paragraph, blockquote, code, etc.), then add its children
-            // to traverse and look for headings.
-            //
-            else if
-            (
-                (0 != element.tagName().compare("blockquote", Qt::CaseInsensitive))
-                && (0 != element.tagName().compare("code", Qt::CaseInsensitive))
-                && (0 != element.tagName().compare("p", Qt::CaseInsensitive))
-                && (0 != element.tagName().compare("ol", Qt::CaseInsensitive))
-                && (0 != element.tagName().compare("ul", Qt::CaseInsensitive))
-                && (0 != element.tagName().compare("table", Qt::CaseInsensitive))
-            )
-            {
-                QStack<QWebElement> childStack;
-                element = element.firstChild();
-
-                while (!element.isNull())
-                {
-                    childStack.push(element);
-                    element = element.nextSibling();
-                }
-
-                while (!childStack.isEmpty())
-                {
-                    elementStack.push(childStack.pop());
-                }
-            }
-        }
+        setHtmlContent(anchoredHtml);
+        this->vanillaHtml = html;
     }
-}
 
-void HtmlPreview::setHtmlExporter(Exporter* exporter)
-{
-    this->exporter = exporter;
-    setHtml("");
-    updatePreview();
-}
+    updateInProgress = false;
 
-void HtmlPreview::setStyleSheet(const QString& filePath)
-{
-    // Update the HTML preview with the newly selected style sheet, if needed.
-    if (!filePath.startsWith(":"))
+    if (updateAgain)
     {
-        htmlBrowser->settings()->setUserStyleSheetUrl
-        (
-            QUrl::fromLocalFile(filePath)
-        );
+        updateAgain = false;
+        updatePreview();
     }
-    else
+
+}
+
+void HtmlPreview::onLoadFinished(bool ok)
+{
+    if (ok)
     {
-        htmlBrowser->settings()->setUserStyleSheetUrl
-        (
-            QUrl(QString("qrc") + filePath)
-        );
+        this->page()->runJavaScript("document.documentElement.contentEditable = false;");
     }
-
-    setHtml("");
-    updatePreview();
-}
-
-void HtmlPreview::printPreview()
-{
-    QPrintPreviewDialog printPreviewDialog(&printer, this);
-
-    connect
-    (
-        &printPreviewDialog,
-        SIGNAL(paintRequested(QPrinter*)),
-        this,
-        SLOT(printHtmlToPrinter(QPrinter*))
-    );
-
-    printPreviewDialog.exec();
-}
-
-void HtmlPreview::printHtmlToPrinter(QPrinter* printer)
-{
-    this->htmlBrowser->print(printer);
-}
-
-void HtmlPreview::onLinkClicked(const QUrl& url)
-{
-    QDesktopServices::openUrl(url);
 }
 
 void HtmlPreview::updateBaseDir()
@@ -289,15 +295,16 @@ void HtmlPreview::updateBaseDir()
         // ensure it works.  If the slash isn't there, then it won't
         // recognize the base URL for some reason.
         //
-        this->baseUrl =
+        baseUrl =
             QUrl::fromLocalFile(QFileInfo(document->getFilePath()).dir().absolutePath()
-                + "/");
+                + "/").toString();
     }
     else
     {
-        this->baseUrl = QUrl();
+        this->baseUrl = "";
     }
 
+    this->setHtml(wrapperHtml, baseUrl);
     this->updatePreview();
 }
 
@@ -310,16 +317,15 @@ void HtmlPreview::closeEvent(QCloseEvent* event)
 {
     Q_UNUSED(event);
 
-    setHtml("");
-    html = "";
+    setHtmlContent("");
+    vanillaHtml = "";
+    livePreviewHtml.setText("");
 }
 
-void HtmlPreview::setHtml(const QString& html)
+void HtmlPreview::setHtmlContent(const QString& html)
 {
-    this->html = html;
-
-    htmlBrowser->setContent(html.toUtf8(), "text/html", baseUrl);
-    htmlBrowser->page()->mainFrame()->scrollToAnchor("livepreviewmodifypoint");
+    this->vanillaHtml = html;
+    this->livePreviewHtml.setText(html);
 }
 
 QString HtmlPreview::exportToHtml

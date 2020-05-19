@@ -1,6 +1,6 @@
 /***********************************************************************
  *
- * Copyright (C) 2014-2017 wereturtle
+ * Copyright (C) 2014-2018 wereturtle
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,8 +40,8 @@
 #include "ThemeEditorDialog.h"
 #include "MessageBoxHelper.h"
 
-#define GW_LIST_WIDGET_ICON_WIDTH 150
-#define GW_LIST_WIDGET_ICON_HEIGHT 100
+#define GW_LIST_WIDGET_ICON_WIDTH 200
+#define GW_LIST_WIDGET_ICON_HEIGHT 125
 
 ThemeSelectionDialog::ThemeSelectionDialog
 (
@@ -66,8 +66,37 @@ ThemeSelectionDialog::ThemeSelectionDialog
 
     QStringList availableThemes =
         ThemeFactory::getInstance()->getAvailableThemes();
+
+    // Find view sizes
+    int focush = style()->pixelMetric(QStyle::PM_FocusFrameHMargin);
+    int focusv = style()->pixelMetric(QStyle::PM_FocusFrameVMargin);
+    int frame = style()->pixelMetric(QStyle::PM_DefaultFrameWidth);
+    int scrollbar = style()->pixelMetric(QStyle::PM_SliderThickness) +
+            style()->pixelMetric(QStyle::PM_ScrollBarExtent);
+    const int spacing = 10;
+    const int rowCount = 3;
+    const int columnCount = 4;
+    QSize viewSize
+    (
+        ((GW_LIST_WIDGET_ICON_WIDTH + frame + focush + (spacing * 2)) * columnCount) + scrollbar,
+        (GW_LIST_WIDGET_ICON_HEIGHT + fontMetrics().height() + frame + focusv + (spacing * 2)) * rowCount
+    );
+
+    // Set up theme list
     themeListWidget = new QListWidget(this);
+    themeListWidget->setSortingEnabled(true);
+    themeListWidget->setFlow(QListView::LeftToRight);
+    themeListWidget->setViewMode(QListView::IconMode);
     themeListWidget->setIconSize(QSize(GW_LIST_WIDGET_ICON_WIDTH, GW_LIST_WIDGET_ICON_HEIGHT));
+    themeListWidget->setSpacing(spacing);
+    themeListWidget->setMovement(QListView::Static);
+    themeListWidget->setResizeMode(QListView::Adjust);
+    themeListWidget->setSelectionMode(QAbstractItemView::SingleSelection);
+    themeListWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    themeListWidget->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    themeListWidget->setWordWrap(true);
+    themeListWidget->setUniformItemSizes(true);
+    themeListWidget->setMinimumSize(viewSize);
 
     for (int i = 0; i < availableThemes.size(); i++)
     {
@@ -97,14 +126,14 @@ ThemeSelectionDialog::ThemeSelectionDialog
 
         if (themeName == currentThemeName)
         {
-            themeListWidget->setCurrentRow(themeListWidget->count() - 1);
+            themeListWidget->setCurrentItem(item);
             currentTheme = theme;
         }
     }
 
     QDialogButtonBox* buttonBox = new QDialogButtonBox(Qt::Horizontal, this);
-    QPushButton* newThemeButton = new QPushButton("+");
-    QPushButton* deleteThemeButton = new QPushButton("-");
+    QPushButton* newThemeButton = new QPushButton(" + ");
+    QPushButton* deleteThemeButton = new QPushButton(" - ");
     QPushButton* editThemeButton = new QPushButton(tr("Edit..."));
 
     buttonBox->addButton(newThemeButton, QDialogButtonBox::ActionRole);
@@ -185,13 +214,21 @@ void ThemeSelectionDialog::onThemeSelected()
 void ThemeSelectionDialog::onNewTheme()
 {
     QString err = QString();
+    Theme newTheme;
     QList<QListWidgetItem*> selectedThemes = themeListWidget->selectedItems();
 
-    Theme newTheme = ThemeFactory::getInstance()->loadTheme
+    if (selectedThemes.size() > 0)
+    {
+        newTheme = ThemeFactory::getInstance()->loadTheme
         (
             selectedThemes[0]->text(),
             err
         );
+    }
+    else
+    {
+        newTheme = ThemeFactory::getInstance()->getDefaultTheme();
+    }
 
     newTheme.setBuiltIn(false);
 
@@ -222,7 +259,7 @@ void ThemeSelectionDialog::onNewTheme()
     currentThemeIsNew = true;
     currentTheme = newTheme;
     currentThemeIsValid = true;
-    this->themeListWidget->setCurrentRow(themeListWidget->count() - 1);
+    this->themeListWidget->setCurrentItem(item);
 
     ThemeEditorDialog themeEditorDialog(newTheme, this);
     connect(&themeEditorDialog, SIGNAL(themeUpdated(Theme)), this, SLOT(onThemeUpdated(Theme)));

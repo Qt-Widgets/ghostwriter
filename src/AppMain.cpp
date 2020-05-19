@@ -1,6 +1,6 @@
 /***********************************************************************
  *
- * Copyright (C) 2014-2018 wereturtle
+ * Copyright (C) 2014-2019 wereturtle
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@
 
 #include <QApplication>
 #include <QCoreApplication>
+#include <QtWebEngine/qtwebengineglobal.h>
 #include <QTranslator>
 #include <QLocale>
 
@@ -32,7 +33,12 @@ int main(int argc, char* argv[])
     QApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
 #endif
 
+#if QT_VERSION >= 0x050700 && defined(Q_OS_LINUX)
+    QGuiApplication::setDesktopFileName("ghostwriter");
+#endif
+
     QApplication app(argc, argv);
+    QtWebEngine::initialize();
 
     // Call this to force settings initialization before the application
     // fully launches.
@@ -41,17 +47,31 @@ int main(int argc, char* argv[])
     QLocale::setDefault(appSettings->getLocale());
 
     QTranslator qtTranslator;
-    qtTranslator.load("qt_" + appSettings->getLocale(),
+    bool ok = qtTranslator.load("qt_" + appSettings->getLocale(),
         QLibraryInfo::location(QLibraryInfo::TranslationsPath));
+
+    if (!ok)
+    {
+        qtTranslator.load("qt_" + appSettings->getLocale(),
+            appSettings->getTranslationsPath());
+    }
+
     app.installTranslator(&qtTranslator);
 
     QTranslator qtBaseTranslator;
-    qtBaseTranslator.load("qtbase_" + appSettings->getLocale(),
+    ok = qtBaseTranslator.load("qtbase_" + appSettings->getLocale(),
         QLibraryInfo::location(QLibraryInfo::TranslationsPath));
+
+    if (!ok)
+    {
+        qtBaseTranslator.load("qtbase_" + appSettings->getLocale(),
+            appSettings->getTranslationsPath());
+    }
+
     app.installTranslator(&qtBaseTranslator);
 
     QTranslator appTranslator;
-    bool ok = appTranslator.load
+    ok = appTranslator.load
     (
         QString("ghostwriter_") + appSettings->getLocale(),
         appSettings->getTranslationsPath()

@@ -1,6 +1,6 @@
 /***********************************************************************
  *
- * Copyright (C) 2014, 2015 wereturtle
+ * Copyright (C) 2014-2018 wereturtle
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -52,9 +52,9 @@ class ThemeFactory
         QStringList getAvailableThemes() const;
 
         /**
-         * Gets a theme that can be used with printing to paper.
+         * Gets the default theme.
          */
-        Theme getPrinterFriendlyTheme() const;
+        Theme getDefaultTheme() const;
 
         /**
          * Returns the theme with the given name.  If an error occurs, the
@@ -99,8 +99,10 @@ class ThemeFactory
         QString generateUntitledThemeName() const;
 
     private:
-        static const QString LIGHT_THEME_NAME;
-        static const QString DARK_THEME_NAME;
+        static const QString CLASSIC_LIGHT_THEME_NAME;
+        static const QString CLASSIC_DARK_THEME_NAME;
+        static const QString PLAINSTRACTION_LIGHT_THEME_NAME;
+        static const QString PLAINSTRACTION_DARK_THEME_NAME;
         static ThemeFactory* instance;
 
         QList<Theme> builtInThemes;
@@ -110,8 +112,10 @@ class ThemeFactory
 
         ThemeFactory();
 
-        void loadLightTheme();
-        void loadDarkTheme();
+        void loadClassicLightTheme();
+        void loadClassicDarkTheme();
+        void loadPlainstractionLightTheme();
+        void loadPlainstractionDarkTheme();
 
         bool extractColorSetting
         (

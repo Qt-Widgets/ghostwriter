@@ -1,6 +1,6 @@
 /***********************************************************************
  *
- * Copyright (C) 2014-2018 wereturtle
+ * Copyright (C) 2014-2019 wereturtle
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,28 +26,21 @@
 #include <QThread>
 #include <QTimer>
 #include <QList>
-#include <QPrinter>
 #include <QRegularExpression>
 #include <QUrl>
 #include <QFutureWatcher>
 #include <QStringList>
 
-#if QT_VERSION >= 0x050000
-#include <QtWebKitWidgets>
-#else
-#include <QtWebKit>
-#endif
+#include <QtWebEngineWidgets>
 
 #include "Exporter.h"
 #include "TextDocument.h"
-
-class QPrintPreviewDialog;
-class QPrinter;
+#include "StringObserver.h"
 
 /**
  * Live HTML Preview window.
  */
-class HtmlPreview : public QMainWindow
+class HtmlPreview : public QWebEngineView
 {
     Q_OBJECT
     
@@ -67,6 +60,11 @@ class HtmlPreview : public QMainWindow
          * Destructor.
          */
         virtual ~HtmlPreview();
+
+        /**
+         * Customize QtWebEngine context menu.
+         */
+        void contextMenuEvent(QContextMenuEvent* event);
 
     public slots:
         /**
@@ -94,16 +92,9 @@ class HtmlPreview : public QMainWindow
          */
         void setStyleSheet(const QString& filePath);
 
-        /**
-         * Call this method to display a print preview dialog of
-         * the rendered HTML.
-         */
-        void printPreview();
-
     private slots:
         void onHtmlReady();
-        void printHtmlToPrinter(QPrinter* printer);
-        void onLinkClicked(const QUrl& url);
+        void onLoadFinished(bool ok);
 
         /**
          * Sets the base directory path for determining resource
@@ -117,24 +108,16 @@ class HtmlPreview : public QMainWindow
         void closeEvent(QCloseEvent* event);
 
     private:
-        QWebView* htmlBrowser;
-        QUrl baseUrl;
         TextDocument* document;
-        QTimer* htmlPreviewUpdateTimer;
-        bool documentChanged;
-        bool typingPaused;
-        QString html;
+        bool updateInProgress;
+        bool updateAgain;
+        QString vanillaHtml;
+        StringObserver livePreviewHtml;
+        StringObserver styleSheetUrl;
+        QString baseUrl;
         QRegularExpression headingTagExp;
         Exporter* exporter;
-
-        /*
-         * Used to set default page layout options for printing.  Also,
-         * if the user closes the print preview dialog, the page layout and
-         * page size settings are remembered in the event that the user reopens
-         * the dialog during the same application session.
-         */
-        QPrinter printer;
-
+        QString wrapperHtml;
         QFutureWatcher<QString>* futureWatcher;
 
         /*
@@ -142,7 +125,7 @@ class HtmlPreview : public QMainWindow
          * HTML for diffing to scroll to the first difference whenever
          * updatePreview() is called.
          */
-        void setHtml(const QString& html);
+        void setHtmlContent(const QString& html);
 
         QString exportToHtml(const QString& text, Exporter* exporter) const;
 };

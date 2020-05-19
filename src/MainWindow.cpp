@@ -1,6 +1,6 @@
 /***********************************************************************
  *
- * Copyright (C) 2014-2018 wereturtle
+ * Copyright (C) 2014-2020 wereturtle
  * Copyright (C) 2009, 2010, 2011, 2012, 2013, 2014 Graeme Gott <graeme@gottcode.org>
  *
  * This program is free software: you can redistribute it and/or modify
@@ -75,6 +75,7 @@
 #include "Exporter.h"
 #include "PreviewOptionsDialog.h"
 #include "StyleSheetManagerDialog.h"
+#include "SandboxedWebPage.h"
 
 #define GW_MAIN_WINDOW_GEOMETRY_KEY "Window/mainWindowGeometry"
 #define GW_MAIN_WINDOW_STATE_KEY "Window/mainWindowState"
@@ -97,6 +98,7 @@ MainWindow::MainWindow(const QString& filePath, QWidget* parent)
 
     qApp->installEventFilter(this);
 
+    menuBarHeight = 0;
     lastMousePos = QPoint(-1, -1);
 
     appSettings = AppSettings::getInstance();
@@ -149,7 +151,7 @@ MainWindow::MainWindow(const QString& filePath, QWidget* parent)
     cheatSheetWidget->addItem(tr("[Link](http://url.com \"Title\")"));
     cheatSheetWidget->addItem(tr("[Reference Link][ID]"));
     cheatSheetWidget->addItem(tr("[ID]: http://url.com \"Reference Definition\""));
-    cheatSheetWidget->addItem(tr("![Image][./image.jpg \"Title\"]"));
+    cheatSheetWidget->addItem(tr("![Image](./image.jpg \"Title\")"));
     cheatSheetWidget->addItem(tr("--- *** ___ Horizontal Rule"));
 
     cheatSheetHud =
@@ -241,7 +243,7 @@ MainWindow::MainWindow(const QString& filePath, QWidget* parent)
     connect(sessionStats, SIGNAL(wordCountChanged(int)), sessionStatsWidget, SLOT(setWordCount(int)));
     connect(sessionStats, SIGNAL(pageCountChanged(int)), sessionStatsWidget, SLOT(setPageCount(int)));
     connect(sessionStats, SIGNAL(wordsPerMinuteChanged(int)), sessionStatsWidget, SLOT(setWordsPerMinute(int)));
-    connect(sessionStats, SIGNAL(writingTimeChanged(int)), sessionStatsWidget, SLOT(setWritingTime(int)));
+    connect(sessionStats, SIGNAL(writingTimeChanged(unsigned long)), sessionStatsWidget, SLOT(setWritingTime(unsigned long)));
     connect(sessionStats, SIGNAL(idleTimePercentageChanged(int)), sessionStatsWidget, SLOT(setIdleTime(int)));
     connect(editor, SIGNAL(typingPaused()), sessionStats, SLOT(onTypingPaused()));
     connect(editor, SIGNAL(typingResumed()), sessionStats, SLOT(onTypingResumed()));
@@ -443,7 +445,7 @@ MainWindow::MainWindow(const QString& filePath, QWidget* parent)
             this
         );
 
-    connect(editor, SIGNAL(typingPaused()), htmlPreview, SLOT(updatePreview()));
+    connect(editor, SIGNAL(typingPausedScaled()), htmlPreview, SLOT(updatePreview()));
     connect(outlineWidget, SIGNAL(headingNumberNavigated(int)), htmlPreview, SLOT(navigateToHeading(int)));
     connect(appSettings, SIGNAL(currentHtmlExporterChanged(Exporter*)), htmlPreview, SLOT(setHtmlExporter(Exporter*)));
     connect(appSettings, SIGNAL(currentCssFileChanged(QString)), htmlPreview, SLOT(setStyleSheet(QString)));
@@ -623,6 +625,24 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
     )
     {
         setOpenHudsVisibility(false);
+    }
+    else if
+    (
+        (
+            (event->type() == QEvent::Leave)
+            || (event->type() == QEvent::WindowDeactivate)
+        )
+        && this->isFullScreen()
+        && appSettings->getHideMenuBarInFullScreenEnabled()
+        && isMenuBarVisible()
+        && ((lastMousePos.y() >= menuBarHeight) || (lastMousePos.y() < 0))
+        && !menuBarMenuActivated
+    )
+    {
+        // Hide menu bar if it is visible in full screen and the focus is
+        // switching to a different application.
+        //
+        hideMenuBar();
     }
     else if (event->type() == QEvent::MouseMove)
     {
@@ -1102,29 +1122,31 @@ void MainWindow::showQuickReferenceGuide()
         QString html = inStream.readAll();
         inputFile.close();
 
+        // Add style sheet to contents.
+        html += "<link href='qrc:/resources/github.css' rel='stylesheet' />";
+
         // Note that the parent widget for this new window must be NULL, so that
         // it will hide beneath other windows when it is deactivated.
         //
-        quickReferenceGuideViewer = new QWebView(NULL);
+        quickReferenceGuideViewer = new QWebEngineView(NULL);
         quickReferenceGuideViewer->setWindowTitle(tr("Quick Reference Guide"));
         quickReferenceGuideViewer->setWindowFlags(Qt::Window);
         quickReferenceGuideViewer->settings()->setDefaultTextEncoding("utf-8");
-        quickReferenceGuideViewer->page()->setLinkDelegationPolicy(QWebPage::DelegateExternalLinks);
-        quickReferenceGuideViewer->page()->action(QWebPage::Reload)->setVisible(false);
-        quickReferenceGuideViewer->page()->action(QWebPage::OpenLink)->setVisible(false);
-        quickReferenceGuideViewer->page()->action(QWebPage::OpenLinkInNewWindow)->setVisible(false);
-        quickReferenceGuideViewer->settings()->setUserStyleSheetUrl(QUrl("qrc:/resources/github.css"));
-        quickReferenceGuideViewer->page()->setContentEditable(false);
-        quickReferenceGuideViewer->setContent(html.toUtf8(), "text/html");
-        connect(quickReferenceGuideViewer, SIGNAL(linkClicked(QUrl)), this, SLOT(onQuickRefGuideLinkClicked(QUrl)));
+        quickReferenceGuideViewer->setPage(new SandboxedWebPage(quickReferenceGuideViewer));
+        quickReferenceGuideViewer->page()->action(QWebEnginePage::Reload)->setVisible(false);
+        quickReferenceGuideViewer->page()->action(QWebEnginePage::ReloadAndBypassCache)->setVisible(false);
+        quickReferenceGuideViewer->page()->action(QWebEnginePage::OpenLinkInThisWindow)->setVisible(false);
+        quickReferenceGuideViewer->page()->action(QWebEnginePage::OpenLinkInNewWindow)->setVisible(false);
+        quickReferenceGuideViewer->page()->action(QWebEnginePage::ViewSource)->setVisible(false);
+        quickReferenceGuideViewer->page()->action(QWebEnginePage::SavePage)->setVisible(false);
+        quickReferenceGuideViewer->page()->runJavaScript("document.documentElement.contentEditable = false;");
+        quickReferenceGuideViewer->setHtml(html);
 
-        // Set zoom factor for WebKit browser to account for system DPI settings,
+        // Set zoom factor for QtWebEngine browser to account for system DPI settings,
         // since WebKit assumes 96 DPI as a fixed resolution.
         //
         QWidget* window = QApplication::desktop()->screen();
         int horizontalDpi = window->logicalDpiX();
-        // Don't want to affect image size, only text size.
-        quickReferenceGuideViewer->settings()->setAttribute(QWebSettings::ZoomTextOnly, true);
         quickReferenceGuideViewer->setZoomFactor((horizontalDpi / 96.0));
 
         quickReferenceGuideViewer->resize(500, 600);
@@ -1197,17 +1219,12 @@ void MainWindow::onTypingResumed()
     }
 }
 
-void MainWindow::onQuickRefGuideLinkClicked(const QUrl& url)
-{
-    QDesktopServices::openUrl(url);
-}
-
 void MainWindow::showAbout()
 {
     QString aboutText =
         QString("<p><b>") +  qAppName() + QString(" ")
         + qApp->applicationVersion() + QString("</b></p>")
-        + tr("<p>Copyright &copy; 2014-2018 wereturtle</b>"
+        + tr("<p>Copyright &copy; 2014-2020 wereturtle</b>"
              "<p>You may use and redistribute this software under the terms of the "
              "<a href=\"http://www.gnu.org/licenses/gpl.html\">"
              "GNU General Public License Version 3</a>.</p>"
@@ -1561,12 +1578,9 @@ void MainWindow::buildMenuBar()
     fileMenu->addAction(tr("R&ename..."), documentManager, SLOT(rename()));
     fileMenu->addAction(tr("Re&load from Disk..."), documentManager, SLOT(reload()));
     fileMenu->addSeparator();
-    fileMenu->addAction(tr("Print Pre&view"), documentManager, SLOT(printPreview()), QKeySequence("SHIFT+CTRL+P"));
-    fileMenu->addAction(tr("&Print"), documentManager, SLOT(print()), QKeySequence::Print);
-    fileMenu->addSeparator();
     fileMenu->addAction(tr("&Export"), documentManager, SLOT(exportFile()), QKeySequence("CTRL+E"));
     fileMenu->addSeparator();
-    fileMenu->addAction(tr("&Quit"), this, SLOT(quitApplication()), QKeySequence::Quit);
+    fileMenu->addAction(tr("&Quit"), this, SLOT(quitApplication()), QKeySequence::Quit)->setMenuRole(QAction::QuitRole);
 
     QMenu* editMenu = this->menuBar()->addMenu(tr("&Edit"));
     editMenu->addAction(tr("&Undo"), editor, SLOT(undo()), QKeySequence::Undo);
@@ -1639,11 +1653,11 @@ void MainWindow::buildMenuBar()
     settingsMenu->addAction(tr("Application Language..."), this, SLOT(onSetLocale()));
     settingsMenu->addAction(tr("Style Sheets..."), this, SLOT(showStyleSheetManager()));
     settingsMenu->addAction(tr("Preview Options..."), this, SLOT(showPreviewOptions()));
-    settingsMenu->addAction(tr("Preferences..."), this, SLOT(openPreferencesDialog()));
+    settingsMenu->addAction(tr("Preferences..."), this, SLOT(openPreferencesDialog()))->setMenuRole(QAction::PreferencesRole);
 
     QMenu* helpMenu = this->menuBar()->addMenu(tr("&Help"));
-    helpMenu->addAction(tr("&About"), this, SLOT(showAbout()));
-    helpMenu->addAction(tr("About &Qt"), qApp, SLOT(aboutQt()));
+    helpMenu->addAction(tr("&About"), this, SLOT(showAbout()))->setMenuRole(QAction::AboutRole);
+    helpMenu->addAction(tr("About &Qt"), qApp, SLOT(aboutQt()))->setMenuRole(QAction::AboutQtRole);
     helpMenu->addAction(tr("Quick &Reference Guide"), this, SLOT(showQuickReferenceGuide()));
     helpMenu->addAction(tr("Wiki"), this, SLOT(showWikiPage()));
 
@@ -2060,7 +2074,6 @@ void MainWindow::applyTheme()
     }
 
     editor->setAspect(theme.getEditorAspect());
-
     styleSheet = "";
 
     QString corners = "";
@@ -2135,8 +2148,8 @@ void MainWindow::applyTheme()
         theme.getCodeColor(),
         theme.getSpellingErrorColor()
     );
-    editor->setStyleSheet(styleSheet);
 
+    editor->setStyleSheet(styleSheet);
     styleSheet = "";
 
     // Wipe out old background image drawing material.
@@ -2170,8 +2183,11 @@ void MainWindow::applyTheme()
         << " } "
         ;
 
-    setStyleSheet(styleSheet);
-
+    // Do not call this->setStyleSheet().  Calling it more than once in a run
+    // (i.e., when changing a theme) causes a crash in Qt 5.11.  Instead,
+    // change the main window's style sheet via qApp.
+    //
+    qApp->setStyleSheet(styleSheet);
     styleSheet = "";
 
     stream
@@ -2181,7 +2197,6 @@ void MainWindow::applyTheme()
     splitter->setStyleSheet(styleSheet);
 
     applyStatusBarStyle();
-
 
     // Make the word count and focus mode button font size
     // match the menu bar's font size, since on Windows using
@@ -2236,7 +2251,6 @@ void MainWindow::applyTheme()
     previewOptionsButton->setIcon(QIcon(markdownOptionsIcon));
     previewOptionsButton->setIconSize(QSize(menuBarFontWidth, menuBarFontWidth));
 
-
     styleSheet = "";
 
     stream
@@ -2248,7 +2262,6 @@ void MainWindow::applyTheme()
         ;
 
     statusLabel->setStyleSheet(styleSheet);
-
     styleSheet = "";
 
     // Style the HUDs
@@ -2277,14 +2290,29 @@ void MainWindow::applyTheme()
     //
     if (outlineWidget->alternatingRowColors())
     {
+        int primaryRowAlpha = 0;
+        int alternateRowAlpha = 20;
+
+        double hudFgBrightness = ColorHelper::getLuminance(theme.getHudForegroundColor());
+        double hudBgBrightness = ColorHelper::getLuminance(theme.getHudBackgroundColor());
+
+        // If the HUD background color is brighter than the foreground color...
+        if (hudBgBrightness > hudFgBrightness)
+        {
+            primaryRowAlpha = 10;
+            alternateRowAlpha = 50;
+        }
+
         stream << "QListWidget { outline: none; border: 0; padding: 1; background-color: transparent; color: "
                << hudFgString
-               << "; alternate-background-color: rgba(255, 255, 255, 50)"
-               << "; font-size: "
+               << "; alternate-background-color: rgba(255, 255, 255, "
+               << alternateRowAlpha
+               << "); font-size: "
                << hudFontSize
                << "pt } QListWidget::item { padding: 1 0 1 0; margin: 0; background-color: "
-               << "rgba(0, 0, 0, 10)"
-               << " } QListWidget::item:alternate { padding: 1; margin: 0; background-color: "
+               << "rgba(0, 0, 0, "
+               << primaryRowAlpha
+               << ") } QListWidget::item:alternate { padding: 1; margin: 0; background-color: "
                << "rgba(255, 255, 255, 10)"
                << " } "
                << "QListWidget::item:selected { border-radius: "
@@ -2323,7 +2351,9 @@ void MainWindow::applyTheme()
     stream << "QLabel { border: 0; padding: 0; margin: 0; background-color: transparent; "
            << "font-size: "
            << hudFontSize
-           << "pt } "
+           << "pt; color: "
+           << hudFgString
+           << " } "
            << "QScrollBar::horizontal { border: 0; background: transparent; height: 8px; margin: 0 } "
            << "QScrollBar::handle:horizontal { border: 0; background: "
            << hudFgString
@@ -2346,13 +2376,24 @@ void MainWindow::applyTheme()
 
     foreach (HudWindow* hud, huds)
     {
+        // Clear style sheet cache for each HUD.
+        hud->setStyleSheet("");
+
+        // Set HUD colors.
         hud->setForegroundColor(theme.getHudForegroundColor());
         hud->setBackgroundColor(alphaHudBackgroundColor);
     }
 
+    // Clear style sheet cache by setting to empty string before
+    // setting the new style sheet.
+    //
+    outlineWidget->setStyleSheet("");
     outlineWidget->setStyleSheet(styleSheet);
+    cheatSheetWidget->setStyleSheet("");
     cheatSheetWidget->setStyleSheet(styleSheet);
+    documentStatsWidget->setStyleSheet("");
     documentStatsWidget->setStyleSheet(styleSheet);
+    sessionStatsWidget->setStyleSheet("");
     sessionStatsWidget->setStyleSheet(styleSheet);
 
     adjustEditorWidth(this->width());

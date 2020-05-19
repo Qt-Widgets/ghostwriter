@@ -31,7 +31,6 @@
 #include <QListWidget>
 #include <QRegularExpression>
 
-#include "GraphicsFadeEffect.h"
 #include "MarkdownEditorTypes.h"
 #include "MarkdownStyles.h"
 #include "TextDocument.h"
@@ -70,10 +69,7 @@ class MarkdownEditor : public QPlainTextEdit
          * this version of Qt chooses the cursor's color based on the
          * editor's background color, rather than the foreground color as it
          * used to in prior versions.  This means that we cannot control the
-         * cursor color via the "color" style sheet property.  Also, using
-         * the GraphicsFadeEffect class that fades the text at the bottom of
-         * the editor will cause the cursor to disappear entirely unless
-         * we draw the cursor manually.
+         * cursor color via the "color" style sheet property.
          */
         void paintEvent(QPaintEvent* event);
 
@@ -188,8 +184,16 @@ class MarkdownEditor : public QPlainTextEdit
 
         /**
          * Emitted when the user has stopped typing text.
+         * Time emitted is 1000ms since last document update.
          */
         void typingPaused();
+
+        /**
+         * Emitted when the user has stopped typing text.
+         * Time emited is scaled per document size up to 1000ms
+         * since last document update.
+         */
+        void typingPausedScaled();
 
         /**
          * Emitted when the cursor position in the editor has changed.
@@ -395,6 +399,7 @@ class MarkdownEditor : public QPlainTextEdit
         void onSelectionChanged();
         void focusText();
         void checkIfTypingPaused();
+        void checkIfTypingPausedScaled();
         void spellCheckFinished(int result);
         void onCursorPositionChanged();
         void toggleCursorBlink();
@@ -453,17 +458,20 @@ class MarkdownEditor : public QPlainTextEdit
         bool textCursorVisible;
         QTimer* cursorBlinkTimer;
 
-        GraphicsFadeEffect* fadeEffect;
-
-        // Timer used to determine when typing has paused.
+        // Timers used to determine when typing has paused.
         QTimer* typingTimer;
-        bool typingHasPaused;
+        QTimer* scaledTypingTimer;
 
-        // Use this flag to keep from sending the typingPaused() signal
-        // multiple times after it's already been sent the first time after
-        // a pause in the user's typing.
+        bool typingHasPaused;
+        bool scaledTypingHasPaused;
+
+        // Use these flags to keep from sending the typingPaused() and
+        // typingPausedScaled() signals multiple times after they have
+        // already been sent the first time after a pause in the user's
+        // typing.
         //
         bool typingPausedSignalSent;
+        bool typingPausedScaledSignalSent;
 
         void handleCarriageReturn();
         bool handleBackspaceKey();
